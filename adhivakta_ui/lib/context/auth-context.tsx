@@ -1,99 +1,64 @@
+// lib/context/auth-context.tsx
 "use client"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
-import type { Session } from "next-auth"
-import { signIn, signOut, useSession } from "next-auth/react"
+import { 
+  auth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  firebaseSignOut
+} from "@/lib/firebase/client"
+import type { User } from "firebase/auth" // Changed import source
 
 interface AuthContextType {
-  user: Session["user"] | null
-  status: "loading" | "authenticated" | "unauthenticated"
-  login: (email: string, password: string) => Promise<boolean>
+  user: User | null
+  loading: boolean
+  login: (email: string, password: string) => Promise<void>
+  register: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
-  register: (userData: any) => Promise<boolean>
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  loading: true,
+  login: async () => {},
+  register: async () => {},
+  logout: async () => {}
+})
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
   const router = useRouter()
-  const { data: session, status } = useSession()
-  const [user, setUser] = useState<Session["user"] | null>(null)
 
   useEffect(() => {
-    if (session?.user) {
-      setUser(session.user)
-    } else {
-      setUser(null)
-    }
-  }, [session])
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user)
+      setLoading(false)
+    })
+    return unsubscribe
+  }, [])
 
   const login = async (email: string, password: string) => {
-    try {
-      const result = await signIn("credentials", {
-        redirect: false,
-        email,
-        password,
-      })
-
-      if (result?.error) {
-        return false
-      }
-
-      return true
-    } catch (error) {
-      console.error("Login error:", error)
-      return false
-    }
+    await signInWithEmailAndPassword(auth, email, password)
   }
 
-  const register = async (userData: any) => {
-    try {
-      const response = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(userData),
-      })
-
-      if (!response.ok) {
-        return false
-      }
-
-      // Auto login after registration
-      return await login(userData.email, userData.password)
-    } catch (error) {
-      console.error("Registration error:", error)
-      return false
-    }
+  const register = async (email: string, password: string) => {
+    await createUserWithEmailAndPassword(auth, email, password)
   }
 
   const logout = async () => {
-    await signOut({ redirect: false })
-    router.push("/")
+    await firebaseSignOut(auth)
+    router.push("/auth/login")
   }
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        status,
-        login,
-        logout,
-        register,
-      }}
-    >
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   )
 }
 
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider")
-  }
-  return context
-}
-
+export const useAuth = () => useContext(AuthContext)

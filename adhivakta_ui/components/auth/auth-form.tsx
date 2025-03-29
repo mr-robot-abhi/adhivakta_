@@ -1,7 +1,5 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,6 +12,9 @@ import { Apple, ArrowRight, Loader2 } from "lucide-react"
 import Image from "next/image"
 import { useAuth } from "@/lib/context/auth-context"
 import { useToast } from "@/hooks/use-toast"
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth"
+import { auth } from "@/lib/firebase/client"
+import { useRouter } from "next/navigation";
 
 interface AuthFormProps {
   defaultTab?: "login" | "register"
@@ -25,6 +26,7 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const { login, register } = useAuth()
   const { toast } = useToast()
+  const router = useRouter()
 
   // Login form state
   const [loginData, setLoginData] = useState({
@@ -71,25 +73,16 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
     setIsLoading(true)
 
     try {
-      const success = await login(loginData.email, loginData.password)
-
-      if (success) {
-        toast({
-          title: "Login successful",
-          description: "Welcome back to Adhivakta!",
-        })
-        onSuccess?.()
-      } else {
-        toast({
-          title: "Login failed",
-          description: "Invalid email or password. Please try again.",
-          variant: "destructive",
-        })
-      }
+      await login(loginData.email, loginData.password)
+      toast({
+        title: "Login successful",
+        description: "Welcome back to Adhivakta!",
+      })
+      onSuccess?.()
     } catch (error) {
       toast({
-        title: "Login error",
-        description: "An unexpected error occurred. Please try again.",
+        title: "Login failed",
+        description: "Invalid email or password. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -102,30 +95,16 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
     setIsLoading(true)
 
     try {
-      const success = await register({
-        name: `${registerData.firstName} ${registerData.lastName}`,
-        email: registerData.email,
-        password: registerData.password,
-        role: registerData.accountType,
+      await register(registerData.email, registerData.password)
+      toast({
+        title: "Registration successful",
+        description: "Your account has been created successfully!",
       })
-
-      if (success) {
-        toast({
-          title: "Registration successful",
-          description: "Your account has been created successfully!",
-        })
-        onSuccess?.()
-      } else {
-        toast({
-          title: "Registration failed",
-          description: "There was a problem creating your account. Please try again.",
-          variant: "destructive",
-        })
-      }
+      onSuccess?.()
     } catch (error) {
       toast({
-        title: "Registration error",
-        description: "An unexpected error occurred. Please try again.",
+        title: "Registration failed",
+        description: "There was a problem creating your account. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -133,18 +112,43 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
     }
   }
 
-  const handleSocialLogin = (provider: string) => {
-    setIsLoading(true)
-
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false)
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const token = await result.user.getIdToken();
+      
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/social`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+  
+      if (!response.ok) throw new Error('Social login failed');
+      
+      const { token: jwtToken, user } = await response.json();
+      
+      // Store token
+      localStorage.setItem('jwtToken', jwtToken);
+      
       toast({
-        title: `${provider} login`,
-        description: "Social login is not implemented in this demo.",
-      })
-    }, 1500)
-  }
+        title: "Login successful",
+        description: `Welcome ${user.name}!`
+      });
+      
+      router.push(user.role === 'lawyer' ? '/dashboard' : '/client-dashboard');
+  
+    } catch (error) {
+      toast({
+        title: "Google login failed",
+        description: "Please try again",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <Tabs
@@ -161,21 +165,11 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
         <Button
           variant="outline"
           className="w-full flex items-center justify-center gap-2 h-11"
-          onClick={() => handleSocialLogin("Google")}
+          onClick={handleGoogleLogin}
           disabled={isLoading}
         >
           <Image src="/placeholder.svg?height=20&width=20" alt="Google" width={20} height={20} />
           <span>Continue with Google</span>
-        </Button>
-
-        <Button
-          variant="outline"
-          className="w-full flex items-center justify-center gap-2 h-11"
-          onClick={() => handleSocialLogin("Apple")}
-          disabled={isLoading}
-        >
-          <Apple className="h-5 w-5" />
-          <span>Continue with Apple</span>
         </Button>
 
         <div className="relative">
@@ -363,4 +357,3 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
     </Tabs>
   )
 }
-
