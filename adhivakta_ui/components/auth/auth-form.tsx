@@ -320,7 +320,6 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
                   <SelectContent>
                     <SelectItem value="lawyer">Lawyer</SelectItem>
                     <SelectItem value="client">Client</SelectItem>
-                    <SelectItem value="admin">Administrator</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

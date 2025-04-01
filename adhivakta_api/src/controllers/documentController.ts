@@ -1,16 +1,16 @@
 import { Request, Response } from 'express';
 import multer from 'multer';
-import DocumentModel from '../models/Document'; // Changed from Document to DocumentModel
+import DocumentModel from '../models/Document';
 import Case from '../models/Case';
 import { uploadFile, deleteFile } from '../utils/storage';
 import logger from '../utils/logger';
 import admin from '../config/firebase';
 
 interface AuthenticatedRequest extends Request {
-    user?: {
-      id: string;
-      role: string;
-    };
+  user?: {
+    id: string;
+    role: string;
+  };
 }
 
 const bucket = admin.storage().bucket();
@@ -28,13 +28,13 @@ export const uploadDocument = async (req: AuthenticatedRequest, res: Response) =
 
       // Validate case access
       const foundCase = await Case.findById(caseId)
-        .populate('client', 'id')
+        .populate('petitioner', 'id')
         .populate('lawyers', 'id');
       
       if (!foundCase) throw new Error('Case not found');
 
       const hasAccess = 
-        foundCase.client._id.toString() === userId ||
+        foundCase.petitioner._id.toString() === userId ||
         foundCase.lawyers.some((l: any) => l._id.toString() === userId);
       
       if (!hasAccess) throw new Error('Unauthorized access');
@@ -42,7 +42,7 @@ export const uploadDocument = async (req: AuthenticatedRequest, res: Response) =
       // Upload to Firebase
       const { url, fileName } = await uploadFile(req.file, `cases/${caseId}`);
 
-      // Save document metadata - Using DocumentModel instead of Document
+      // Save document metadata
       const newDoc = new DocumentModel({
         name,
         description,
@@ -51,7 +51,7 @@ export const uploadDocument = async (req: AuthenticatedRequest, res: Response) =
         fileSize: req.file.size,
         case: caseId,
         uploadedBy: userId,
-        access: [userId, foundCase.client._id, ...foundCase.lawyers.map((l: any) => l._id)],
+        access: [userId, foundCase.petitioner._id, ...foundCase.lawyers.map((l: any) => l._id)],
       });
 
       await newDoc.save();
@@ -78,7 +78,22 @@ export const getCaseDocuments = async (req: AuthenticatedRequest, res: Response)
     const { caseId } = req.params;
     const userId = req.user?.id;
 
-    // Using DocumentModel instead of Document
+    // First verify the user has access to the case
+    const foundCase = await Case.findOne({
+      _id: caseId,
+      $or: [
+        { petitioner: userId },
+        { lawyers: userId }
+      ]
+    });
+
+    if (!foundCase) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized access to case documents'
+      });
+    }
+
     const docs = await DocumentModel.find({
       case: caseId,
       access: userId,
@@ -90,6 +105,59 @@ export const getCaseDocuments = async (req: AuthenticatedRequest, res: Response)
     });
   } catch (error: any) {
     logger.error(`Failed to fetch documents: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const deleteDocument = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+
+    const document = await DocumentModel.findById(id);
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found'
+      });
+    }
+
+    // Verify user has access to delete (either petitioner or lawyer)
+    const foundCase = await Case.findOne({
+      _id: document.case,
+      $or: [
+        { petitioner: userId },
+        { lawyers: userId }
+      ]
+    });
+
+    if (!foundCase) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized to delete this document'
+      });
+    }
+
+    // Delete from storage
+    await deleteFile(document.fileUrl);
+
+    // Delete from database
+    await DocumentModel.findByIdAndDelete(id);
+
+    // Remove reference from case
+    await Case.findByIdAndUpdate(document.case, {
+      $pull: { documents: id }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Document deleted successfully'
+    });
+  } catch (error: any) {
+    logger.error(`Failed to delete document: ${error.message}`);
     res.status(500).json({
       success: false,
       message: error.message,

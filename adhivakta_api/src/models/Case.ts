@@ -1,12 +1,27 @@
 import { Schema, model, Document, Types } from 'mongoose';
 import logger from '../utils/logger';
 
-// Interface for Court subdocument
-interface ICourt {
+// Interface for Stakeholder subdocument
+interface IStakeholder {
   name: string;
-  location: string;
-  judge?: string;
-  additionalInfo?: string;
+  email?: string;
+  phone?: string;
+  relation?: string;
+}
+
+// Interface for Counsel subdocument
+interface ICounsel {
+  name: string;
+  email?: string;
+  phone?: string;
+  firm?: string;
+}
+
+// Interface for Defendant subdocument
+interface IDefendant {
+  name: string;
+  email?: string;
+  phone?: string;
 }
 
 // Interface for Hearing subdocument
@@ -22,23 +37,22 @@ export interface ICase extends Document {
   caseNumber: string;
   title: string;
   description: string;
-  type: string;
-  status: 'open' | 'closed' | 'pending' | 'dismissed' | 'appealed';
-  priority: 'low' | 'medium' | 'high' | 'critical';
+  caseType: 'civil' | 'criminal' | 'family' | 'commercial' | 'writs';
+  status: 'active' | 'closed';
+  courtType: 'supreme' | 'high' | 'district' | 'commercial' | 'family';
+  courtHall?: string;
+  judge?: string;
   hearings: IHearing[];
-  court: ICourt;
-  client: Types.ObjectId;
+  petitioner: Types.ObjectId;
+  defendant: IDefendant;
   lawyers: Types.ObjectId[];
+  seniorCounsel: boolean;
+  stakeholders: IStakeholder[];
+  counselForRespondent: ICounsel[];
   documents: Types.ObjectId[];
   relatedCases: Types.ObjectId[];
-  outcome?: string;
-  billingInfo?: {
-    hourlyRate?: number;
-    fixedFee?: number;
-    expenses?: number;
-    totalBilled?: number;
-  };
-  tags: string[];
+  nextHearing?: Date;
+  closingDate?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -50,18 +64,24 @@ const HearingSchema = new Schema<IHearing>({
   notes: { type: String },
 }, { _id: false });
 
-const CourtSchema = new Schema<ICourt>({
+const StakeholderSchema = new Schema<IStakeholder>({
   name: { type: String, required: true },
-  location: { type: String, required: true },
-  judge: { type: String },
-  additionalInfo: { type: String },
+  email: { type: String },
+  phone: { type: String },
+  relation: { type: String },
 }, { _id: false });
 
-const BillingInfoSchema = new Schema({
-  hourlyRate: { type: Number },
-  fixedFee: { type: Number },
-  expenses: { type: Number, default: 0 },
-  totalBilled: { type: Number, default: 0 },
+const CounselSchema = new Schema<ICounsel>({
+  name: { type: String, required: true },
+  email: { type: String },
+  phone: { type: String },
+  firm: { type: String },
+}, { _id: false });
+
+const DefendantSchema = new Schema<IDefendant>({
+  name: { type: String, required: true },
+  email: { type: String },
+  phone: { type: String },
 }, { _id: false });
 
 const CaseSchema = new Schema<ICase>(
@@ -82,36 +102,48 @@ const CaseSchema = new Schema<ICase>(
       required: true,
       trim: true 
     },
-    type: { 
+    caseType: { 
       type: String, 
       required: true,
-      enum: ['civil', 'criminal', 'family', 'corporate', 'property', 'labor', 'other'],
-      default: 'other'
+      enum: ['civil', 'criminal', 'family', 'commercial', 'writs'],
+      default: 'civil'
     },
     status: { 
       type: String, 
-      enum: ['open', 'closed', 'pending', 'dismissed', 'appealed'], 
-      default: 'open' 
+      enum: ['active', 'closed'], 
+      default: 'active' 
     },
-    priority: {
+    courtType: {
       type: String,
-      enum: ['low', 'medium', 'high', 'critical'],
-      default: 'medium'
+      required: true,
+      enum: ['supreme', 'high', 'district', 'commercial', 'family']
+    },
+    courtHall: {
+      type: String
+    },
+    judge: {
+      type: String
     },
     hearings: [HearingSchema],
-    court: { 
-      type: CourtSchema, 
-      required: true 
-    },
-    client: { 
+    petitioner: { 
       type: Schema.Types.ObjectId, 
       ref: 'User', 
       required: true 
+    },
+    defendant: {
+      type: DefendantSchema,
+      required: true
     },
     lawyers: [{ 
       type: Schema.Types.ObjectId, 
       ref: 'User' 
     }],
+    seniorCounsel: {
+      type: Boolean,
+      default: false
+    },
+    stakeholders: [StakeholderSchema],
+    counselForRespondent: [CounselSchema],
     documents: [{ 
       type: Schema.Types.ObjectId, 
       ref: 'Document' 
@@ -120,16 +152,24 @@ const CaseSchema = new Schema<ICase>(
       type: Schema.Types.ObjectId, 
       ref: 'Case' 
     }],
-    outcome: { 
-      type: String 
+    nextHearing: {
+      type: Date
     },
-    billingInfo: {
-      type: BillingInfoSchema
-    },
-    tags: [{ 
-      type: String,
-      trim: true 
-    }]
+    closingDate: {
+      type: Date,
+      validate: {
+        validator: function(this: ICase, value: Date) {
+          if (this.status === 'closed' && !value) {
+            return false;
+          }
+          if (value && value > new Date('2025-03-29')) {
+            return false;
+          }
+          return true;
+        },
+        message: 'Closed cases must have a closing date before March 29, 2025'
+      }
+    }
   },
   { 
     timestamps: true,
@@ -138,13 +178,18 @@ const CaseSchema = new Schema<ICase>(
   }
 );
 
-// Virtual for next hearing
-CaseSchema.virtual('nextHearing').get(function() {
-  const now = new Date();
-  const upcomingHearings = this.hearings
-    .filter(h => h.date > now)
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
-  return upcomingHearings.length > 0 ? upcomingHearings[0] : null;
+// Indexes for better query performance
+CaseSchema.index({ caseNumber: 1 });
+CaseSchema.index({ status: 1 });
+CaseSchema.index({ petitioner: 1 });
+CaseSchema.index({ 'defendant.name': 1 });
+CaseSchema.index({ nextHearing: 1 });
+CaseSchema.index({ caseType: 1 });
+CaseSchema.index({ courtType: 1 });
+
+// Virtual for active cases
+CaseSchema.virtual('isActive').get(function() {
+  return this.status === 'active';
 });
 
 // Pre-save hook to generate case number
@@ -153,9 +198,10 @@ CaseSchema.pre('save', async function(next) {
     try {
       const count = await this.model('Case').countDocuments();
       const year = new Date().getFullYear().toString().slice(-2);
-      this.caseNumber = `CASE-${year}-${(count + 1).toString().padStart(4, '0')}`;
+      this.caseNumber = `CS-${year}-${(count + 1).toString().padStart(4, '0')}`;
       next();
     } catch (error: any) {
+      logger.error(`Error generating case number: ${error.message}`);
       next(error);
     }
   } else {
@@ -166,6 +212,18 @@ CaseSchema.pre('save', async function(next) {
 // Post-save hook for logging
 CaseSchema.post('save', function(doc) {
   logger.info(`Case ${doc.caseNumber} (${doc._id}) was saved`);
+});
+
+// Pre-update hook to validate closing date
+CaseSchema.pre('findOneAndUpdate', async function(next) {
+  const update = this.getUpdate() as any;
+  if (update?.status === 'closed' && !update?.closingDate) {
+    const error = new Error('Closing date is required when closing a case');
+    logger.error(error.message);
+    next(error);
+  } else {
+    next();
+  }
 });
 
 const Case = model<ICase>('Case', CaseSchema);

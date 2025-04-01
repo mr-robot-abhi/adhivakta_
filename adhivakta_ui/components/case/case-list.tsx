@@ -11,42 +11,69 @@ export function CaseList() {
     {
       id: "CS-2023-1234",
       title: "Smith vs. Johnson",
-      court: "Supreme Court",
+      caseType: "Civil",
+      courtType: "Supreme Court",
       status: "Active",
       nextHearing: "2023-06-15",
-      client: "John Smith",
+      petitioner: "John Smith",
+      defendant: "Michael Johnson",
+      assignedLawyer: "Sarah Davis",
+      seniorCounsel: true,
+      filingDate: "2023-01-10"
     },
     {
       id: "CS-2023-1235",
       title: "Doe vs. State",
-      court: "High Court",
-      status: "Pending",
-      nextHearing: "2023-06-18",
-      client: "Jane Doe",
+      caseType: "Criminal",
+      courtType: "High Court",
+      status: "Closed",
+      nextHearing: null,
+      petitioner: "Jane Doe",
+      defendant: "State of California",
+      assignedLawyer: "Michael Chen",
+      seniorCounsel: false,
+      filingDate: "2022-11-15",
+      closingDate: "2023-03-20"
     },
     {
       id: "CS-2023-1236",
       title: "ABC Corp vs. XYZ Ltd",
-      court: "Commercial Court",
+      caseType: "Commercial",
+      courtType: "Commercial Court",
       status: "Active",
       nextHearing: "2023-06-20",
-      client: "ABC Corporation",
+      petitioner: "ABC Corporation",
+      defendant: "XYZ Limited",
+      assignedLawyer: "Robert Williams",
+      seniorCounsel: true,
+      filingDate: "2023-02-05"
     },
     {
       id: "CS-2023-1237",
-      title: "Estate of Williams",
-      court: "Probate Court",
-      status: "Pending",
+      title: "Williams Family Trust",
+      caseType: "Family",
+      courtType: "Family Court",
+      status: "Active",
       nextHearing: "2023-06-22",
-      client: "Williams Family",
+      petitioner: "Williams Family",
+      defendant: "James Williams",
+      assignedLawyer: "Sarah Davis",
+      seniorCounsel: false,
+      filingDate: "2023-01-30"
     },
     {
       id: "CS-2023-1238",
       title: "Johnson vs. City Council",
-      court: "Administrative Court",
+      caseType: "Administrative",
+      courtType: "Administrative Court",
       status: "Closed",
       nextHearing: null,
-      client: "Robert Johnson",
+      petitioner: "Robert Johnson",
+      defendant: "City Council",
+      assignedLawyer: "Michael Chen",
+      seniorCounsel: false,
+      filingDate: "2022-10-15",
+      closingDate: "2023-03-10"
     },
   ]
 
@@ -59,7 +86,9 @@ export function CaseList() {
               <TableHead>Case Number</TableHead>
               <TableHead>Title</TableHead>
               <TableHead>Court</TableHead>
-              <TableHead>Client</TableHead>
+              <TableHead>Petitioner/Plaintiff</TableHead>
+              <TableHead>Defendant</TableHead>
+              <TableHead>Case Type</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Next Hearing</TableHead>
               <TableHead className="w-[80px]"></TableHead>
@@ -74,19 +103,41 @@ export function CaseList() {
                     {caseItem.title}
                   </Link>
                 </TableCell>
-                <TableCell>{caseItem.court}</TableCell>
-                <TableCell>{caseItem.client}</TableCell>
+                <TableCell>{caseItem.courtType}</TableCell>
+                <TableCell>{caseItem.petitioner}</TableCell>
+                <TableCell>{caseItem.defendant}</TableCell>
                 <TableCell>
-                  <Badge
-                    variant={
-                      caseItem.status === "Active" ? "default" : caseItem.status === "Pending" ? "secondary" : "outline"
-                    }
-                  >
-                    {caseItem.status}
+                  <Badge variant="secondary" className="capitalize">
+                    {caseItem.caseType}
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  {caseItem.nextHearing ? new Date(caseItem.nextHearing).toLocaleDateString() : "N/A"}
+                  <Badge
+                    variant={
+                      caseItem.status === "Active" 
+                        ? "default" 
+                        : caseItem.status === "Closed" 
+                          ? "destructive" 
+                          : "outline"
+                    }
+                  >
+                    {caseItem.status}
+                    {caseItem.status === "Active" && caseItem.seniorCounsel && (
+                      <span className="ml-1">⭐</span>
+                    )}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {caseItem.nextHearing ? (
+                    <div className="flex flex-col">
+                      <span>{new Date(caseItem.nextHearing).toLocaleDateString()}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {caseItem.assignedLawyer}
+                      </span>
+                    </div>
+                  ) : (
+                    "N/A"
+                  )}
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-2">
@@ -107,6 +158,9 @@ export function CaseList() {
                         <DropdownMenuItem>Edit</DropdownMenuItem>
                         <DropdownMenuItem>Add document</DropdownMenuItem>
                         <DropdownMenuItem>Schedule hearing</DropdownMenuItem>
+                        {caseItem.status === "Active" && (
+                          <DropdownMenuItem className="text-destructive">Close case</DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -119,4 +173,3 @@ export function CaseList() {
     </Card>
   )
 }
-

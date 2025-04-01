@@ -4,9 +4,8 @@ import {
   getCases,
   getCaseDetails,
   updateCase,
-  addHearing,
-  searchCases,
-  getCaseTimeline
+  getCaseStats,
+  getUpcomingHearings
 } from '../controllers/caseController';
 import { authMiddleware, roleMiddleware } from '../middlewares/authMiddleware';
 
@@ -17,15 +16,12 @@ router.use(authMiddleware);
 
 // Client and lawyer routes
 router.get('/', getCases);
-router.get('/search', searchCases);
+router.get('/stats', getCaseStats);
+router.get('/hearings/upcoming', getUpcomingHearings);
 router.get('/:id', getCaseDetails);
-router.get('/:id/timeline', getCaseTimeline);
 
 // Client-only routes
 router.post('/', roleMiddleware(['client', 'admin']), createCase);
 router.put('/:id', roleMiddleware(['client', 'admin']), updateCase);
-
-// Lawyer-only routes
-router.patch('/:id/hearings', roleMiddleware(['lawyer', 'admin']), addHearing);
 
 export default router;

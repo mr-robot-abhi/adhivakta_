@@ -4,28 +4,30 @@ import Case from '../models/Case';
 import User from '../models/User';
 import logger from '../utils/logger';
 import { ICase } from '../models/Case';
+
 interface AuthenticatedRequest extends Request {
-    user?: {
-      id: string;
-      role: string;
-    };
-  }
+  user?: {
+    id: string;
+    role: string;
+  };
+}
+
 // Helper function to validate case access
 const validateCaseAccess = async (userId: string, caseId: string, isLawyer: boolean) => {
   const foundCase = await Case.findById(caseId)
-    .populate('client', 'id')
+    .populate('petitioner', 'id')
     .populate('lawyers', 'id');
 
   if (!foundCase) {
     return { valid: false, status: 404, message: 'Case not found' };
   }
 
-  // Check if user is client or assigned lawyer
-  const isClient = foundCase.client._id.toString() === userId;
+  // Check if user is petitioner or assigned lawyer
+  const isPetitioner = foundCase.petitioner._id.toString() === userId;
   const isAssignedLawyer = isLawyer && 
     foundCase.lawyers.some(l => l._id.toString() === userId);
 
-  if (!isClient && !isAssignedLawyer) {
+  if (!isPetitioner && !isAssignedLawyer) {
     return { valid: false, status: 403, message: 'Unauthorized access to case' };
   }
 
@@ -36,20 +38,28 @@ export const createCase = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { 
       title,
+      caseNumber,
+      caseType,
+      courtType,
+      courtHall,
+      judge,
       description,
-      type,
-      priority,
-      court,
-      clientId,
+      petitionerId,
+      defendant,
+      defendantEmail,
+      defendantPhone,
       lawyerIds,
-      hearingDates,
-      tags
+      seniorCounsel,
+      stakeholders,
+      counselForRespondent,
+      nextHearing,
+      status
     } = req.body;
 
-    // Validate client exists and is a client
-    const client = await User.findById(clientId);
-    if (!client || client.role !== 'client') {
-      return res.status(400).json({ message: 'Invalid client ID' });
+    // Validate petitioner exists
+    const petitioner = await User.findById(petitionerId);
+    if (!petitioner) {
+      return res.status(400).json({ message: 'Invalid petitioner ID' });
     }
 
     // Validate lawyers exist and are lawyers
@@ -63,25 +73,54 @@ export const createCase = async (req: AuthenticatedRequest, res: Response) => {
       }
     }
 
+    // Validate status is either 'active' or 'closed'
+    if (status && !['active', 'closed'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status value' });
+    }
+
+    // Validate closed cases have closing date before March 29, 2025
+    if (status === 'closed' && req.body.closingDate) {
+      const closingDate = new Date(req.body.closingDate);
+      const maxDate = new Date('2025-03-29');
+      if (closingDate > maxDate) {
+        return res.status(400).json({ 
+          message: 'Closed cases must have a closing date before March 29, 2025' 
+        });
+      }
+    }
+
     // Create new case
     const newCase = new Case({
       title,
+      caseNumber,
+      caseType,
+      courtType,
+      courtHall,
+      judge,
       description,
-      type,
-      priority,
-      court,
-      client: clientId,
+      petitioner: petitionerId,
+      defendant: {
+        name: defendant,
+        email: defendantEmail,
+        phone: defendantPhone
+      },
       lawyers: lawyerIds || [],
-      hearings: hearingDates?.map((date: string) => ({ date: new Date(date), purpose: 'Initial hearing' })) || [],
-      tags
+      seniorCounsel: seniorCounsel || false,
+      stakeholders: stakeholders || [],
+      counselForRespondent: counselForRespondent || [],
+      nextHearing: nextHearing ? new Date(nextHearing) : null,
+      status: status || 'active',
+      closingDate: status === 'closed' ? new Date(req.body.closingDate) : null
     });
 
     await newCase.save();
 
     // Populate for response
     const populatedCase = await Case.findById(newCase._id)
-      .populate('client', 'name email phone')
-      .populate('lawyers', 'name email specialization');
+      .populate('petitioner', 'name email phone')
+      .populate('lawyers', 'name email phone')
+      .populate('stakeholders', 'name email phone relation')
+      .populate('counselForRespondent', 'name email phone firm');
 
     logger.info(`Case ${newCase.caseNumber} created by user ${req.user?.id}`);
     res.status(201).json(populatedCase);
@@ -104,10 +143,10 @@ export const getCases = async (req: AuthenticatedRequest, res: Response) => {
     
     const { 
       status,
-      type,
-      priority,
+      caseType,
+      courtType,
       search,
-      clientId,
+      petitionerId,
       lawyerId,
       fromDate,
       toDate
@@ -118,28 +157,28 @@ export const getCases = async (req: AuthenticatedRequest, res: Response) => {
 
     // Role-based filtering
     if (user?.role === 'client') {
-      query.client = new mongoose.Types.ObjectId(user.id);
+      query.petitioner = new mongoose.Types.ObjectId(user.id);
     } else if (user?.role === 'lawyer') {
       query.lawyers = new mongoose.Types.ObjectId(user.id);
     }
 
     // Additional filters with type validation
-    if (status && ['open', 'closed', 'pending', 'dismissed', 'appealed'].includes(status as string)) {
+    if (status && ['active', 'closed'].includes(status as string)) {
       query.status = status;
     }
 
-    if (type && ['civil', 'criminal', 'family', 'corporate', 'property', 'labor', 'other'].includes(type as string)) {
-      query.type = type;
+    if (caseType && ['civil', 'criminal', 'family', 'commercial', 'writs'].includes(caseType as string)) {
+      query.caseType = caseType;
     }
 
-    if (priority && ['low', 'medium', 'high', 'critical'].includes(priority as string)) {
-      query.priority = priority;
+    if (courtType && ['supreme', 'high', 'district', 'commercial', 'family'].includes(courtType as string)) {
+      query.courtType = courtType;
     }
 
-    // Client/lawyer specific filtering (for admin users)
+    // Petitioner/lawyer specific filtering (for admin users)
     if (user?.role === 'admin') {
-      if (clientId) {
-        query.client = new mongoose.Types.ObjectId(clientId as string);
+      if (petitionerId) {
+        query.petitioner = new mongoose.Types.ObjectId(petitionerId as string);
       }
       if (lawyerId) {
         query.lawyers = new mongoose.Types.ObjectId(lawyerId as string);
@@ -157,7 +196,7 @@ export const getCases = async (req: AuthenticatedRequest, res: Response) => {
       }
     }
 
-    // Search functionality with text index support
+    // Search functionality
     if (search) {
       const searchStr = search as string;
       if (searchStr.length > 2) {
@@ -165,8 +204,8 @@ export const getCases = async (req: AuthenticatedRequest, res: Response) => {
           { caseNumber: { $regex: searchStr, $options: 'i' } },
           { title: { $regex: searchStr, $options: 'i' } },
           { description: { $regex: searchStr, $options: 'i' } },
-          { 'court.name': { $regex: searchStr, $options: 'i' } },
-          { tags: { $in: [new RegExp(searchStr, 'i')] } }
+          { 'defendant.name': { $regex: searchStr, $options: 'i' } },
+          { 'petitioner.name': { $regex: searchStr, $options: 'i' } }
         ];
       }
     }
@@ -174,8 +213,8 @@ export const getCases = async (req: AuthenticatedRequest, res: Response) => {
     // Get cases with pagination
     const [cases, total] = await Promise.all([
       Case.find(query)
-        .populate('client', 'name email phone')
-        .populate('lawyers', 'name email specialization')
+        .populate('petitioner', 'name email phone')
+        .populate('lawyers', 'name email phone')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -209,19 +248,23 @@ export const getCaseDetails = async (req: AuthenticatedRequest, res: Response) =
     const caseId = req.params.id;
     const userId = req.user?.id;
     const isLawyer = req.user?.role === 'lawyer';
-    const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
-    const skip = (page - 1) * limit;    
+    
     const access = await validateCaseAccess(userId!, caseId, isLawyer);
     if (!access.valid) {
         return res.status(access.status ?? 500).json({ message: access.message });
     }
 
     const foundCase = await Case.findById(caseId)
-      .populate('client', 'name email phone')
-      .populate('lawyers', 'name email specialization')
+      .populate('petitioner', 'name email phone')
+      .populate('lawyers', 'name email phone')
+      .populate('stakeholders', 'name email phone relation')
+      .populate('counselForRespondent', 'name email phone firm')
       .populate('documents', 'name fileUrl createdAt')
       .populate('relatedCases', 'caseNumber title status');
+
+    if (!foundCase) {
+      return res.status(404).json({ message: 'Case not found' });
+    }
 
     res.status(200).json({
       success: true,
@@ -242,9 +285,7 @@ export const updateCase = async (req: AuthenticatedRequest, res: Response) => {
     const caseId = req.params.id;
     const userId = req.user?.id;
     const isLawyer = req.user?.role === 'lawyer';
-    const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
-    const skip = (page - 1) * limit;
+    
     const access = await validateCaseAccess(userId!, caseId, isLawyer);
     if (!access.valid) {
         return res.status(access.status ?? 500).json({ message: access.message });
@@ -254,21 +295,27 @@ export const updateCase = async (req: AuthenticatedRequest, res: Response) => {
     const updateData = isLawyer
       ? {
           status: req.body.status,
-          hearings: req.body.hearings,
-          outcome: req.body.outcome
+          nextHearing: req.body.nextHearing,
+          outcome: req.body.outcome,
+          lawyers: req.body.lawyerIds,
+          seniorCounsel: req.body.seniorCounsel
         }
       : req.body;
 
+    // If updating status to closed, validate closing date
+    if (updateData.status === 'closed' && !updateData.closingDate) {
+      return res.status(400).json({ message: 'Closing date is required when closing a case' });
+    }
+
     // If updating lawyers, validate they exist and are lawyers
-    if (req.body.lawyerIds) {
+    if (updateData.lawyers) {
       const lawyers = await User.find({ 
-        _id: { $in: req.body.lawyerIds }, 
+        _id: { $in: updateData.lawyers }, 
         role: 'lawyer' 
       });
-      if (lawyers.length !== req.body.lawyerIds.length) {
+      if (lawyers.length !== updateData.lawyers.length) {
         return res.status(400).json({ message: 'One or more invalid lawyer IDs' });
       }
-      updateData.lawyers = req.body.lawyerIds;
     }
 
     const updatedCase = await Case.findByIdAndUpdate(
@@ -276,8 +323,10 @@ export const updateCase = async (req: AuthenticatedRequest, res: Response) => {
       updateData,
       { new: true, runValidators: true }
     )
-      .populate('client', 'name email phone')
-      .populate('lawyers', 'name email specialization');
+      .populate('petitioner', 'name email phone')
+      .populate('lawyers', 'name email phone')
+      .populate('stakeholders', 'name email phone relation')
+      .populate('counselForRespondent', 'name email phone firm');
 
     logger.info(`Case ${updatedCase?.caseNumber} updated by user ${userId}`);
     res.status(200).json({
@@ -294,144 +343,84 @@ export const updateCase = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const addHearing = async (req: AuthenticatedRequest, res: Response) => {
+export const getCaseStats = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const caseId = req.params.id;
-    const userId = req.user?.id;
-    const { date, purpose, notes } = req.body;
-    const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
-    const skip = (page - 1) * limit;
-    if (!date || !purpose) {
-      return res.status(400).json({ message: 'Date and purpose are required' });
-    }
-
-    const access = await validateCaseAccess(userId!, caseId, true);
-    if (!access.valid) {
-        return res.status(access.status ?? 500).json({ message: access.message });
-    }
-
-    const updatedCase = await Case.findByIdAndUpdate(
-      caseId,
-      { $push: { hearings: { date: new Date(date), purpose, notes } } },
-      { new: true }
-    );
-
-    logger.info(`Hearing added to case ${updatedCase?.caseNumber} by user ${userId}`);
-    res.status(200).json({
-      success: true,
-      data: updatedCase
-    });
-  } catch (error: any) {
-    logger.error(`Add hearing error: ${error.message}`);
-    res.status(500).json({ 
-      success: false,
-      message: 'Failed to add hearing',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-export const searchCases = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { query } = req.query;
     const userId = req.user?.id;
     const isLawyer = req.user?.role === 'lawyer';
-    const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
-    const skip = (page - 1) * limit;
-    if (!query) {
-      return res.status(400).json({ message: 'Search query is required' });
-    }
 
-    const searchRegex = new RegExp(query as string, 'i');
-
-    let baseQuery: mongoose.FilterQuery<ICase> = {
-      $or: [
-        { caseNumber: searchRegex },
-        { title: searchRegex },
-        { description: searchRegex },
-        { 'court.name': searchRegex },
-        { tags: { $in: [new RegExp(query as string, 'i')] } }
-      ]
-    };
-
-    // Apply role-based filtering
+    // Base query for role-based filtering
+    let baseQuery: mongoose.FilterQuery<ICase> = {};
     if (req.user?.role === 'client') {
-      baseQuery.client = new mongoose.Types.ObjectId(userId!);
+      baseQuery.petitioner = new mongoose.Types.ObjectId(userId!);
     } else if (req.user?.role === 'lawyer') {
       baseQuery.lawyers = new mongoose.Types.ObjectId(userId!);
     }
 
-    const cases = await Case.find(baseQuery)
-      .select('caseNumber title status priority nextHearing')
-      .limit(10)
-      .lean();
+    // Get stats
+    const [activeCases, closedCases, upcomingHearings] = await Promise.all([
+      Case.countDocuments({ ...baseQuery, status: 'active' }),
+      Case.countDocuments({ ...baseQuery, status: 'closed' }),
+      Case.countDocuments({ 
+        ...baseQuery, 
+        status: 'active',
+        nextHearing: { 
+          $gte: new Date(),
+          $lte: new Date(new Date().setDate(new Date().getDate() + 7))
+        }
+      })
+    ]);
 
     res.status(200).json({
       success: true,
-      count: cases.length,
-      data: cases
+      data: {
+        activeCases,
+        closedCases,
+        upcomingHearings
+      }
     });
   } catch (error: any) {
-    logger.error(`Case search error: ${error.message}`);
+    logger.error(`Get case stats error: ${error.message}`);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to search cases',
+      message: 'Failed to get case statistics',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
 
-export const getCaseTimeline = async (req: AuthenticatedRequest, res: Response) => {
+export const getUpcomingHearings = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const caseId = req.params.id;
     const userId = req.user?.id;
     const isLawyer = req.user?.role === 'lawyer';
-    const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 10));
-    const skip = (page - 1) * limit;
-    const access = await validateCaseAccess(userId!, caseId, isLawyer);
-    if (!access.valid) {
-        return res.status(access.status ?? 500).json({ message: access.message });
+
+    // Base query for role-based filtering
+    let baseQuery: mongoose.FilterQuery<ICase> = {
+      status: 'active',
+      nextHearing: { $gte: new Date() }
+    };
+    
+    if (req.user?.role === 'client') {
+      baseQuery.petitioner = new mongoose.Types.ObjectId(userId!);
+    } else if (req.user?.role === 'lawyer') {
+      baseQuery.lawyers = new mongoose.Types.ObjectId(userId!);
     }
 
-    const foundCase = await Case.findById(caseId)
-      .select('hearings createdAt updatedAt status')
-      .sort({ 'hearings.date': 1 });
-
-    if (!foundCase) {
-      return res.status(404).json({ message: 'Case not found' });
-    }
-
-    const timeline = [
-      {
-        type: 'case_created',
-        date: foundCase.createdAt,
-        description: 'Case was opened'
-      },
-      ...foundCase.hearings.map(hearing => ({
-        type: 'hearing',
-        date: hearing.date,
-        description: hearing.purpose,
-        details: hearing
-      })),
-      {
-        type: 'status_update',
-        date: foundCase.updatedAt,
-        description: `Case status changed to ${foundCase.status}`
-      }
-    ].sort((a, b) => b.date.getTime() - a.date.getTime());
+    const hearings = await Case.find(baseQuery)
+      .select('caseNumber title nextHearing lawyers courtType')
+      .populate('lawyers', 'name')
+      .sort({ nextHearing: 1 })
+      .limit(5)
+      .lean();
 
     res.status(200).json({
       success: true,
-      data: timeline
+      data: hearings
     });
   } catch (error: any) {
-    logger.error(`Get case timeline error: ${error.message}`);
+    logger.error(`Get upcoming hearings error: ${error.message}`);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to get case timeline',
+      message: 'Failed to get upcoming hearings',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
