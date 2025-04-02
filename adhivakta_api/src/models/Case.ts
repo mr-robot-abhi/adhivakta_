@@ -89,8 +89,7 @@ const CaseSchema = new Schema<ICase>(
     caseNumber: { 
       type: String, 
       required: true, 
-      unique: true,
-      index: true 
+      unique: true
     },
     title: { 
       type: String, 
