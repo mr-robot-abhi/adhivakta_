@@ -9,45 +9,76 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Icons } from "@/components/ui/icons"
+import { useToast } from "@/hooks/use-toast"
 
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [rememberMe, setRememberMe] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState("")
   const router = useRouter()
   const { login } = useAuth()
+  const { toast } = useToast()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    setError("")
     
     try {
       await login(email, password)
+      toast({
+        title: "Login successful",
+        description: "Welcome back!",
+      })
       router.push("/dashboard")
-    } catch (err) {
-      setError("Invalid email or password")
+    } catch (error: any) {
+      toast({
+        title: "Login failed",
+        description: error.message || "Invalid credentials",
+        variant: "destructive",
+      })
     } finally {
       setIsLoading(false)
     }
   }
 
   const handleGoogleSignIn = async () => {
+    setIsLoading(true)
     try {
       const provider = new GoogleAuthProvider()
-      await signInWithPopup(auth, provider)
-      router.push("/dashboard")
-    } catch (err) {
-      setError("Google sign-in failed")
+      const result = await signInWithPopup(auth, provider)
+      const token = await result.user.getIdToken()
+      
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/social`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      })
+
+      if (!response.ok) throw new Error('Social login failed')
+      
+      const { token: jwtToken, user } = await response.json()
+      localStorage.setItem('jwtToken', jwtToken)
+      
+      toast({
+        title: "Login successful",
+        description: `Welcome ${user.name}!`,
+      })
+      
+      router.push(user.role === 'lawyer' ? '/dashboard' : '/client-dashboard')
+    } catch (error: any) {
+      toast({
+        title: "Google login failed",
+        description: error.message || "Authentication error",
+        variant: "destructive"
+      })
+    } finally {
+      setIsLoading(false)
     }
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {error && <div className="text-red-500 text-sm">{error}</div>}
-      
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input 
@@ -57,13 +88,19 @@ export function LoginForm() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          disabled={isLoading}
         />
       </div>
       
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <Label htmlFor="password">Password</Label>
-          <Button variant="link" className="h-auto p-0 text-sm">
+          <Button 
+            variant="link" 
+            className="h-auto p-0 text-sm"
+            type="button"
+            onClick={() => router.push("/auth/reset-password")}
+          >
             Forgot password?
           </Button>
         </div>
@@ -71,8 +108,10 @@ export function LoginForm() {
           id="password" 
           type="password" 
           required
+          minLength={8}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          disabled={isLoading}
         />
       </div>
       
@@ -81,6 +120,7 @@ export function LoginForm() {
           id="remember" 
           checked={rememberMe}
           onCheckedChange={(checked) => setRememberMe(!!checked)}
+          disabled={isLoading}
         />
         <Label htmlFor="remember" className="text-sm font-normal">
           Remember me

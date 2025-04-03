@@ -1,0 +1,203 @@
+adhivakta_api/
+├── .gitignore
+├── package-lock.json
+├── package.json
+├── README.md
+├── tsconfig.json
+├── logs/
+│   ├── combined.log
+│   └── error.log
+└── src/
+    ├── index.ts
+    ├── config/
+    │   ├── database.ts
+    │   ├── firebase-service-account.json
+    │   └── firebase.ts
+    ├── controllers/
+    │   ├── aiController.ts
+    │   ├── authController.ts
+    │   ├── calendarController.ts
+    │   ├── caseController.ts
+    │   ├── clientController.ts
+    │   ├── documentController.ts
+    │   └── notificationController.ts
+    ├── middlewares/
+    │   ├── authMiddleware.ts
+    │   └── errorHandler.ts
+    ├── models/
+    │   ├── AuditLog.ts
+    │   ├── Case.ts
+    │   ├── Client.ts
+    │   ├── Document.ts
+    │   ├── Notification.ts
+    │   └── User.ts
+    ├── routes/
+    │   ├── authRoutes.ts
+    │   ├── calendarRoutes.ts
+    │   ├── caseRoutes.ts
+    │   ├── clientRoutes.ts
+    │   └── documentRoutes.ts
+    ├── services/
+    │   ├── aiService.ts
+    │   ├── emailService.ts
+    │   └── notificationService.ts
+    ├── utils/
+    │   ├── logger.ts
+    │   └── storage.ts
+    └── validations/
+        └── caseValidation.ts
+
+adhivakta_ui/
+├── .gitignore
+├── components.json
+├── middleware.ts
+├── next.config.mjs
+├── package-lock.json
+├── package.json
+├── pnpm-lock.yaml
+├── postcss.config.mjs
+├── tailwind.config.ts
+└── tsconfig.json
+    ├── app/
+    │   ├── globals.css
+    │   ├── layout.tsx
+    │   ├── not-found.tsx
+    │   ├── page.tsx
+    │   ├── (dashboard)/
+    │   ├── api/
+    │   ├── auth/
+    │   │   ├── page.tsx
+    │   │   ├── login/
+    │   │   │   └── page.tsx
+    │   │   └── register/
+    │   │       └── page.tsx
+    │   ├── calendar/
+    │   │   └── page.tsx
+    │   ├── cases/
+    │   │   ├── page.tsx
+    │   │   ├── [id]/
+    │   │   │   └── page.tsx
+    │   │   └── new/
+    │   │       └── page.tsx
+    │   ├── clients/
+    │   │   ├── page.tsx
+    │   │   └── new/
+    │   │       └── page.tsx
+    │   ├── documents/
+    │   │   ├── page.tsx
+    │   │   └── upload/
+    │   │       └── page.tsx
+    │   ├── notifications/
+    │   │   ├── page.tsx
+    │   │   └── [id]/
+    │   │       └── page.tsx
+    │   ├── profile/
+    │   │   └── page.tsx
+    │   └── settings/
+    │       └── page.tsx
+    ├── components/
+    │   ├── theme-provider.tsx
+    │   ├── auth/
+    │   │   ├── auth-form.tsx
+    │   │   ├── login-form.tsx
+    │   │   └── register-form.tsx
+    │   ├── case/
+    │   │   ├── add-case-form.tsx
+    │   │   ├── case-actions.tsx
+    │   │   ├── case-details.tsx
+    │   │   ├── case-documents.tsx
+    │   │   ├── case-filters.tsx
+    │   │   ├── case-list.tsx
+    │   │   └── case-timeline.tsx
+    │   ├── clients/
+    │   │   ├── add-client-form.tsx
+    │   │   ├── client-filters.tsx
+    │   │   └── client-list.tsx
+    │   ├── dashboard/
+    │   │   ├── activity-timeline.tsx
+    │   │   ├── client-dashboard.tsx
+    │   │   ├── dashboard-stats.tsx
+    │   │   ├── recent-cases.tsx
+    │   │   └── upcoming-hearings.tsx
+    │   ├── documents/
+    │   │   ├── document-filters.tsx
+    │   │   └── document-list.tsx
+    │   ├── layout/
+    │   │   ├── header.tsx
+    │   │   ├── logo.tsx
+    │   │   └── sidebar.tsx
+    │   ├── ui/
+    │   │   ├── accordion.tsx
+    │   │   ├── alert-dialog.tsx
+    │   │   ├── alert.tsx
+    │   │   ├── aspect-ratio.tsx
+    │   │   ├── avatar.tsx
+    │   │   ├── badge.tsx
+    │   │   ├── breadcrumb.tsx
+    │   │   ├── button.tsx
+    │   │   ├── calendar.tsx
+    │   │   ├── card.tsx
+    │   │   ├── carousel.tsx
+    │   │   ├── chart.tsx
+    │   │   ├── checkbox.tsx
+    │   │   ├── collapsible.tsx
+    │   │   ├── command.tsx
+    │   │   ├── context-menu.tsx
+    │   │   ├── dialog.tsx
+    │   │   ├── drawer.tsx
+    │   │   ├── dropdown-menu.tsx
+    │   │   ├── form.tsx
+    │   │   ├── hover-card.tsx
+    │   │   ├── icons.tsx
+    │   │   ├── input-otp.tsx
+    │   │   ├── input.tsx
+    │   │   ├── label.tsx
+    │   │   ├── menubar.tsx
+    │   │   ├── navigation-menu.tsx
+    │   │   ├── pagination.tsx
+    │   │   ├── popover.tsx
+    │   │   ├── progress.tsx
+    │   │   ├── radio-group.tsx
+    │   │   ├── resizable.tsx
+    │   │   ├── scroll-area.tsx
+    │   │   ├── select.tsx
+    │   │   ├── separator.tsx
+    │   │   ├── sheet.tsx
+    │   │   ├── skeleton.tsx
+    │   │   ├── slider.tsx
+    │   │   ├── switch.tsx
+    │   │   ├── table.tsx
+    │   │   ├── tabs.tsx
+    │   │   ├── textarea.tsx
+    │   │   ├── toast.tsx
+    │   │   ├── toaster.tsx
+    │   │   ├── toggle-group.tsx
+    │   │   └── tooltip.tsx
+    ├── hooks/
+    │   ├── use-mobile.tsx
+    │   └── use-toast.ts
+    ├── lib/
+    │   ├── utils.ts
+    │   ├── api/
+    │   │   └── auth.ts
+    │   ├── context/
+    │   │   └── auth-context.tsx
+    │   ├── db/
+    │   │   ├── firestore.ts
+    │   │   └── mongodb.ts
+    │   └── firebase/
+    │       └── client.ts
+    ├── public/
+    │   ├── placeholder-logo.png
+    │   ├── placeholder-logo.svg
+    │   ├── placeholder-user.jpg
+    │   ├── placeholder.jpg
+    │   ├── placeholder.svg
+    │   └── images/
+    │       ├── justice-scales-closeup.png
+    │       ├── legal-workspace.png
+    │       └── scales-of-justice.png
+    └── styles/
+        └── globals.css
+    └── types/
+        └── next-auth.d.ts

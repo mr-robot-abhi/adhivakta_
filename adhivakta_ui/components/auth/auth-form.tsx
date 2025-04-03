@@ -8,13 +8,14 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { motion, AnimatePresence } from "framer-motion"
-import { Apple, ArrowRight, Loader2 } from "lucide-react"
+import { ArrowRight, Loader2 } from "lucide-react"
 import Image from "next/image"
 import { useAuth } from "@/lib/context/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth"
 import { auth } from "@/lib/firebase/client"
-import { useRouter } from "next/navigation";
+import { useRouter } from "next/navigation"
+import { LoginFormData, RegisterFormData } from "@/lib/types/auth"
 
 interface AuthFormProps {
   defaultTab?: "login" | "register"
@@ -22,21 +23,19 @@ interface AuthFormProps {
 }
 
 export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
-  const [activeTab, setActiveTab] = useState(defaultTab)
+  const [activeTab, setActiveTab] = useState<"login" | "register">(defaultTab)
   const [isLoading, setIsLoading] = useState(false)
   const { login, register } = useAuth()
   const { toast } = useToast()
   const router = useRouter()
 
-  // Login form state
-  const [loginData, setLoginData] = useState({
+  const [loginData, setLoginData] = useState<LoginFormData>({
     email: "",
     password: "",
     remember: false,
   })
 
-  // Register form state
-  const [registerData, setRegisterData] = useState({
+  const [registerData, setRegisterData] = useState<RegisterFormData>({
     firstName: "",
     lastName: "",
     email: "",
@@ -47,25 +46,25 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
 
   const handleLoginChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target
-    setLoginData({
-      ...loginData,
+    setLoginData((prev: LoginFormData) => ({
+      ...prev,
       [name]: type === "checkbox" ? checked : value,
-    })
+    }))
   }
 
   const handleRegisterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target
-    setRegisterData({
-      ...registerData,
+    setRegisterData((prev: RegisterFormData) => ({
+      ...prev,
       [name]: type === "checkbox" ? checked : value,
-    })
+    }))
   }
 
-  const handleAccountTypeChange = (value: string) => {
-    setRegisterData({
-      ...registerData,
-      accountType: value,
-    })
+  const handleAccountTypeChange = (value: "lawyer" | "client") => {
+    setRegisterData((prev: RegisterFormData) => ({ 
+      ...prev, 
+      accountType: value 
+    }))
   }
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -74,15 +73,12 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
 
     try {
       await login(loginData.email, loginData.password)
-      toast({
-        title: "Login successful",
-        description: "Welcome back to Adhivakta!",
-      })
-      onSuccess?.()
-    } catch (error) {
+      toast({ title: "Login successful", description: "Welcome back!" })
+      onSuccess?.() || router.push("/dashboard")
+    } catch (error: any) {
       toast({
         title: "Login failed",
-        description: "Invalid email or password. Please try again.",
+        description: error.message || "Invalid credentials",
         variant: "destructive",
       })
     } finally {
@@ -92,19 +88,33 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (!registerData.terms) {
+      toast({
+        title: "Accept Terms",
+        description: "You must accept the terms to register",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsLoading(true)
 
     try {
-      await register(registerData.email, registerData.password)
-      toast({
-        title: "Registration successful",
-        description: "Your account has been created successfully!",
-      })
-      onSuccess?.()
-    } catch (error) {
+      await register(
+        registerData.email, 
+        registerData.password,
+        {
+          name: `${registerData.firstName} ${registerData.lastName}`,
+          role: registerData.accountType
+        }
+      )
+      toast({ title: "Registration successful", description: "Account created!" })
+      onSuccess?.() || setActiveTab("login")
+    } catch (error: any) {
       toast({
         title: "Registration failed",
-        description: "There was a problem creating your account. Please try again.",
+        description: error.message || "Account creation failed",
         variant: "destructive",
       })
     } finally {
@@ -113,48 +123,41 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
   }
 
   const handleGoogleLogin = async () => {
-    setIsLoading(true);
+    setIsLoading(true)
     try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const token = await result.user.getIdToken();
+      const provider = new GoogleAuthProvider()
+      const result = await signInWithPopup(auth, provider)
+      const token = await result.user.getIdToken()
       
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/social`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token })
-      });
+      })
   
-      if (!response.ok) throw new Error('Social login failed');
+      if (!response.ok) throw new Error(await response.text())
       
-      const { token: jwtToken, user } = await response.json();
+      const { token: jwtToken, user } = await response.json()
+      localStorage.setItem('jwtToken', jwtToken)
       
-      // Store token
-      localStorage.setItem('jwtToken', jwtToken);
-      
-      toast({
-        title: "Login successful",
-        description: `Welcome ${user.name}!`
-      });
-      
-      router.push(user.role === 'lawyer' ? '/dashboard' : '/client-dashboard');
-  
-    } catch (error) {
+      toast({ title: "Login successful", description: `Welcome ${user.name}!` })
+      router.push(user.role === 'lawyer' ? '/dashboard' : '/client-dashboard')
+    } catch (error: any) {
       toast({
         title: "Google login failed",
-        description: "Please try again",
+        description: error.message || "Authentication error",
         variant: "destructive"
-      });
+      })
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   return (
-    <Tabs
-      defaultValue={defaultTab}
+    <Tabs 
+      value={activeTab} 
+      onValueChange={(value: string) => setActiveTab(value as "login" | "register")} 
       className="w-full"
-      onValueChange={(value) => setActiveTab(value as "login" | "register")}
     >
       <TabsList className="grid w-full grid-cols-2 mb-6">
         <TabsTrigger value="login">Login</TabsTrigger>
@@ -164,12 +167,17 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
       <div className="space-y-4 mb-6">
         <Button
           variant="outline"
-          className="w-full flex items-center justify-center gap-2 h-11"
+          className="w-full gap-2 h-11"
           onClick={handleGoogleLogin}
           disabled={isLoading}
         >
-          <Image src="/placeholder.svg?height=20&width=20" alt="Google" width={20} height={20} />
-          <span>Continue with Google</span>
+          <Image 
+            src="/google-icon.svg" 
+            alt="Google" 
+            width={20} 
+            height={20} 
+          />
+          Continue with Google
         </Button>
 
         <div className="relative">
@@ -177,7 +185,9 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
             <span className="w-full border-t" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
+            <span className="bg-background px-2 text-muted-foreground">
+              Or continue with
+            </span>
           </div>
         </div>
       </div>
@@ -207,7 +217,11 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="password">Password</Label>
-                  <Button variant="link" className="h-auto p-0 text-sm">
+                  <Button 
+                    variant="link" 
+                    className="h-auto p-0 text-sm"
+                    type="button"
+                  >
                     Forgot password?
                   </Button>
                 </div>
@@ -226,23 +240,25 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
                   id="remember"
                   name="remember"
                   checked={loginData.remember}
-                  onCheckedChange={(checked) => setLoginData({ ...loginData, remember: checked as boolean })}
+                  onCheckedChange={(checked) => 
+                    setLoginData((prev: LoginFormData) => ({ ...prev, remember: checked as boolean }))
+                  }
                   disabled={isLoading}
                 />
                 <Label htmlFor="remember" className="text-sm font-normal">
                   Remember me
                 </Label>
               </div>
-              <Button type="submit" className="w-full h-11" disabled={isLoading}>
+              <Button type="submit" className="w-full gap-2 h-11" disabled={isLoading}>
                 {isLoading ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     Signing in...
                   </>
                 ) : (
                   <>
                     Sign in
-                    <ArrowRight className="ml-2 h-4 w-4" />
+                    <ArrowRight className="h-4 w-4" />
                   </>
                 )}
               </Button>
@@ -302,6 +318,7 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
                   name="password"
                   type="password"
                   required
+                  minLength={8}
                   value={registerData.password}
                   onChange={handleRegisterChange}
                   disabled={isLoading}
@@ -310,12 +327,12 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
               <div className="space-y-2">
                 <Label htmlFor="account-type">Account type</Label>
                 <Select
-                  defaultValue={registerData.accountType}
+                  value={registerData.accountType}
                   onValueChange={handleAccountTypeChange}
                   disabled={isLoading}
                 >
                   <SelectTrigger id="account-type">
-                    <SelectValue placeholder="Select account type" />
+                    <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="lawyer">Lawyer</SelectItem>
@@ -329,23 +346,25 @@ export function AuthForm({ defaultTab = "login", onSuccess }: AuthFormProps) {
                   name="terms"
                   required
                   checked={registerData.terms}
-                  onCheckedChange={(checked) => setRegisterData({ ...registerData, terms: checked as boolean })}
+                  onCheckedChange={(checked) => 
+                    setRegisterData((prev: RegisterFormData) => ({ ...prev, terms: checked as boolean }))
+                  }
                   disabled={isLoading}
                 />
                 <Label htmlFor="terms" className="text-sm font-normal">
-                  I agree to the terms of service and privacy policy
+                  I agree to the terms
                 </Label>
               </div>
-              <Button type="submit" className="w-full h-11" disabled={isLoading}>
+              <Button type="submit" className="w-full gap-2 h-11" disabled={isLoading}>
                 {isLoading ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     Creating account...
                   </>
                 ) : (
                   <>
                     Create account
-                    <ArrowRight className="ml-2 h-4 w-4" />
+                    <ArrowRight className="h-4 w-4" />
                   </>
                 )}
               </Button>
